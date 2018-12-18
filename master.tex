@@ -1,0 +1,1003 @@
+\documentclass[letterpaper,12pt]{article}
+
+\title{Algebraic structure for untyped Racket}
+\author{Eric Griffis \\ dedbox@gmail.com}
+
+% Page Layout
+
+\usepackage[margin=1in]{geometry}
+
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+
+% Content Layout
+
+\usepackage{array}
+
+\newenvironment{Grammar}
+{
+  \begin{tabular*}{\linewidth}{
+    >{$}l<{$}
+    >{$}c<{$}
+    >{$}l<{$}
+    @{\extracolsep{\fill}}
+    r}
+}{
+  \end{tabular*}
+}
+
+\newcommand\OR{\ensuremath{~|~}}
+
+% Notation
+
+\usepackage{upgreek}
+\usepackage{amsmath,amssymb}
+\usepackage{semantic}
+\usepackage{colonequals}
+
+\mathlig{::=}{\coloncolonequals}
+\mathlig{+->}{\mapsto}
+\mathlig{>>}{\leadsto^\text{*}}
+\mathlig{|-}{\vdash}
+\mathlig{|=}{\vDash}
+\mathlig{~>}{\leadsto}
+\mathlig{<>}{\diamond}
+\mathlig{**}{\times}
+\mathlig{<}{\langle}
+\mathlig{>}{\rangle}
+\mathlig{=:}{\text{\texttt{=}}}
+\mathlig{>:}{\text{\texttt{>}}}
+\mathlig{<:}{\text{\texttt{<}}}
+\mathlig{+:}{\text{\texttt{+}}}
+\mathlig{-:}{\text{\texttt{-}}}
+\mathlig{*:}{\text{\texttt{*}}}
+\mathlig{/:}{\text{\texttt{/}}}
+\mathlig{==}{\text{\texttt{==}}}
+\mathlig{++}{\text{\texttt{++}}}
+\mathlig{//}{\text{\texttt{//}}}
+
+\newcommand\lt{\mathligsoff <}
+\newcommand\gt{\mathligsoff >}
+
+\def\Mac{\upmu}
+\def\Fun{\upphi}
+\def\Con{\delta}
+
+% Inference Rules
+
+\usepackage{mathpartir}
+
+\newcommand\Rule[1]{\text{rule \RULE{#1}}}
+\newcommand\RULE[1]{\text{\textsc{#1}}}
+\newcommand\Infer[3][]{\inferrule{#2}{#3}~\RULE{#1}}
+
+% Model
+
+\newcommand\X[1]{\text{#1}}
+
+% \newcommand\NullaryConstructor[1]{\def\#1{#1}}
+
+\def\Succ{\X{Succ}~}
+\def\Zero{\X{Zero}}
+\def\True{\X{True}}
+\def\False{\X{False}}
+\def\Nil{\X{Nil}}
+\def\Cons{\X{Cons}~}
+\def\Loop{\X{Loop}~}
+
+\def\add{\X{add}~}
+\def\mul{\X{mul}~}
+\def\Neg{\X{not}~}
+\def\lan{\X{and}~}
+\def\ior{\X{or}~}
+\def\xor{\X{xor}~}
+\def\lst{\X{list}~}
+\def\rev{\X{rev}~}
+\def\reverse{\X{reverse}~}
+\def\append{\X{append}~}
+\def\map{\X{map}~}
+\def\Let{\X{let}~}
+\def\Letrec{\X{letrec}~}
+\def\fix{\X{fix}~}
+\def\If{~\X{if}~}
+\def\Fib{\X{fib}~}
+
+\DeclareMathOperator{\match}{match}
+\DeclareMathOperator{\vars}{vars}
+\DeclareMathOperator{\hcall}{call}
+
+% Large delimiters
+
+\usepackage{mleftright}
+
+\newenvironment{Clauses}[1][c|c]{
+  \mleft[
+    \hspace{-0.3em}
+    \begin{array}{#1}
+}{
+    \end{array}
+    \hspace{-0.3em}
+  \mright]
+}
+
+% References
+
+% \usepackage{natbib}
+
+% ------------------------------------------------------------------------------
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  A language for defining simple macros and pure functions with pattern-based
+  syntax, along with first-class data constructors. Type system not included.
+\end{abstract}
+
+\section{The core model}
+\label{sec:core-model}
+
+\begin{minipage}[t]{0.45\linewidth}
+  \vspace{0pt}
+  \begin{Grammar}
+    t
+    & ::= & t~t      & application     \\
+    & \OR & t;t      & sequence        \\
+    & \OR & \Mac p.t & macro clause    \\
+    & \OR & \Fun p.t & function clause \\
+    & \OR & x        & variable        \\
+    & \OR & \Con     & constructor     \\
+    & \OR & <>       & null            \\
+    v
+    & ::= & \Mac p.t;\cdot & macro       \\
+    & \OR & \Fun p.t;\cdot & function    \\
+    & \OR & \Con           & constructor \\
+    & \OR & \Con~(v;\cdot) & instance    \\
+    & \OR & <>             & null        \\
+  \end{Grammar}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.45\linewidth}
+  \vspace{0pt}
+  \begin{Grammar}
+    p
+    & ::= & p~p  & application \\
+    & \OR & p;p  & sequence    \\
+    & \OR & \_   & wildcard    \\
+    & \OR & x    & variable    \\
+    & \OR & \Con & constructor \\
+    & \OR & <>   & null        \\
+  \end{Grammar}
+\end{minipage}
+
+A \emph{constructor} ($\Con$) identifies a data type. Constructors are first
+class; they can be matched against, collected into lists, and passed between
+functions. A constructor applied to a value is an \emph{instance} of the
+denoted type.
+
+\begin{mathpar}
+  \Infer[Seq1]{
+    t_1 ~> t_1'
+  }{
+    t_1;t_2 ~> t_1';t_2
+  }
+
+  \Infer[Seq2]{
+    t_2 ~> t_2'
+  }{
+    v_1;t_2 ~> v_1;t_2'
+  }
+\end{mathpar}
+
+Sequences ($t;t$) are evaluated eagerly from left to right. Sequences collect
+multiple clauses into a single macro or function. A sequence is \emph{uniform}
+($t;\cdot$) when every sub-term has the same shape.
+
+\begin{mathpar}
+  \Infer[App1]{
+    t_1 ~> t_1'
+  }{
+    t_1~t_2 ~> t_1'~t_2
+  }
+
+  \Infer[AppM]{
+    p_{11} \times t_2 = \sigma \\
+    \sigma(t_{12}) = t_{12}'
+  }{
+    (\Mac p_{11}.t_{12})~t_2 ~> t_{12}'
+  }
+
+  \Infer[App2]{
+    v_1 \not\sim \Mac p.t;\cdot \\
+    t_2 ~> t_2'
+  }{
+    v_1~t_2 ~> v_1~t_2'
+  }
+
+  \Infer[AppF]{
+    p_{11} \times v_2 = \sigma \\
+    \sigma(t_{12}) = t_{12}'
+  }{
+    (\Fun p_{11}.t_{12})~v_2 ~> t_{12}'
+  }
+\end{mathpar}
+
+A \emph{macro clause} ($\Mac p.t$) is a lambda abstraction that can reject or
+deconstruct a term by pattern matching against its unevaluated argument. A
+\emph{macro} ($\Mac p.t;\cdot$) is a macro clause or a uniform sequence of
+macro clauses. A macro gets stuck if every clause rejects the argument term.
+
+A \emph{function clause} ($\Fun p.t$) is a lambda abstraction that can reject
+or deconstruct a value by pattern matching against its fully-evaluated
+argument. A \emph{function} ($\Fun p.t;\cdot$) is a function clause or a uniform
+sequence of function clauses. A function gets stuck if every clause rejects
+the argument value.
+
+An \emph{application} ($t~t$) is evaluated quasi-eagerly, starting on the
+left. If the left side reduces to a macro, it is a \emph{macro application}
+and its patterns are matched against the un-evaluated right side. Otherwise,
+the right side is evaluated; if the left side reduced to a function, it is a
+\emph{function application} and its patterns are matched against the
+evaluation result. In either case, if the match succeeds, any bound pattern
+variables are substituted in the consequent term, which becomes the result of
+the application.
+
+\begin{mathpar}
+  \Infer[Mac1]{
+    (\Mac p_1.t_2)~t_4 ~> t_2'
+  }{
+    (\Mac p_1.t_2;v_3)~t_4 ~> t_2'
+  }
+
+  \Infer[Mac2]{
+    p_1 ** t_4 = <>
+  }{
+    (\Mac p_1.t_2;v_3)~t_4 ~> v_3~t_4
+  }
+
+  \\
+
+  \Infer[Fun1]{
+    (\Fun p_1.t_2)~v_4 ~> t_2'
+  }{
+    (\Fun p_1.t_2;v_3)~v_4 ~> t_2'
+  }
+
+  \Infer[Fun2]{
+    p_1 ** v_4 = <>
+  }{
+    (\Fun p_1.t_2;v_3)~v_4 ~> v_3~v_4
+  }
+\end{mathpar}
+
+The clauses of a uniform sequence are applied in order, from left to right.
+The first successful match determines the result.
+
+\subsection{Pattern matching}
+\label{sec:struct-patt-match}
+
+\begin{mathpar}
+  \Infer{
+    p_1 ** t_1 = \sigma_1 \\
+    p_2 ** t_2 = \sigma_2
+  }{
+    (p_1~p_2) ** (t_1~t_2) = \sigma_1 \cup \sigma_2
+  }
+
+  \Infer{
+    p_1 ** t_1 = \sigma_1 \\
+    p_2 ** t_2 = \sigma_2
+  }{
+    (p_1;p_2) ** (t_1;t_2) = \sigma_1 \cup \sigma_2
+  }
+
+  \Infer{}{x_1 ** t_2 = \{x_1 +-> t_2\}}
+
+  \Infer{
+    \Con_1 = \Con_2
+  }{
+    \Con_1 ** \Con_2 = \{\}
+  }
+
+  \Infer{}{\_ ** t_1 = \{\}}
+
+  \Infer{}{<> ** <> = \{\}}
+\end{mathpar}
+
+A \emph{constructor pattern} ($\Con$) matches any constructor with the same
+name. A \emph{null pattern} ($<>$) matches only the null term. A
+\emph{wildcard} ($\_$) matches anything. A \emph{variable} ($x$) matches
+anything and binds itself to the matched term. An \emph{application pattern}
+($p~p$) or \emph{sequence pattern} ($p;p$) matches its sub-patterns against
+the sub-terms of an application and passes along any variable bindings.
+
+\subsection{Variable substitution}
+\label{sec:vari-subst}
+
+\begin{mathpar}
+  \Infer{}{\sigma(t_1~t_2) = \sigma(t_1)~\sigma(t_2)}
+
+  \Infer{}{\sigma(t_1;t_2) = \sigma(t_1);\sigma(t_2)}
+
+  \Infer{
+    \sigma' = \sigma \setminus \vars(p_1) \\
+    t_2' = \sigma'(t_2)
+  }{
+    \sigma(\Mac p_1.t_2) = \Mac p_1.t_2'
+  }
+
+  \Infer{
+    \sigma' = \sigma \setminus \vars(p_1) \\
+    t_2' = \sigma'(t_2)
+  }{
+    \sigma(\Fun p_1.t_2) = \Fun p_1.t_2'
+  }
+
+  \Infer{
+    (x_1 +-> t) \in \sigma
+  }{
+    \sigma(x_1) = t
+  }
+
+  \Infer{}{\sigma(\delta_1) = \delta_1}
+
+  \Infer{}{\sigma(<>) = <>}
+\end{mathpar}
+
+\subsection{Examples}
+\label{sec:core-examples}
+
+\subsubsection{Numbers}
+\label{sec:core-example-numbers}
+
+\begin{align*}
+  \X{add} & = \Fun(a~\Zero).a;\Fun(a~(\Succ b)).\Succ (\add (a~b))
+\end{align*}
+
+\begin{math}
+  \add ((\Succ \Zero)~(\Succ (\Succ \Zero)))    \\
+  ~> \Succ (\add ((\Succ \Zero)~(\Succ \Zero))) \\
+  ~> \Succ (\Succ (\add ((\Succ \Zero)~\Zero))) \\
+  ~> \Succ (\Succ (\Succ \Zero))
+\end{math}
+
+\begin{align*}
+  \X{mul} & = \Fun(a~\Zero).\Zero;\Fun(a~(\Succ b)).\add (a~(\mul (a~b)))
+\end{align*}
+
+Denote by $N \in \mathbb{N}$ a series of $N$ $\Succ$\!s and a $\Zero$.
+
+\begin{minipage}[t]{0.45\linewidth}
+  \begin{math}
+    \mul (2~3)                                     \\
+    ~> \add (2~(\mul (2~2)))                       \\
+    ~> \add (2~(\add (2~(\mul (2~1)))))            \\
+    ~> \add (2~(\add (2~(\add (2~(\mul (2~0))))))) \\
+    ~> \add (2~(\add (2~(\add (2~0)))))            \\
+    ~> \add (2~(\add (2~2)))                       \\
+    ~> \add (2~(\Succ (\add (2~1))))               \\
+    ~> \add (2~(\Succ (\Succ (\add (2~0)))))       \\
+    ~> \add (2~4)
+  \end{math}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.45\linewidth}
+  \begin{math}
+    \\
+    ~> \Succ (\add (2~3))                         \\
+    ~> \Succ (\Succ (\add (2~2)))                 \\
+    ~> \Succ (\Succ (\Succ (\add (2~1))))         \\
+    ~> \Succ (\Succ (\Succ (\Succ (\add (2~0))))) \\
+    ~> 6
+  \end{math}
+\end{minipage}
+
+\subsubsection{Booleans}
+\label{sec:core-example-booleans}
+
+\begin{align*}
+  \X{not} & = \Fun\False.\True;\Fun\_.\False           \\
+  \X{and} & = \Mac(a~b).(\Fun\False.\False;\Fun\_.b)~a \\
+  \X{or}  & = \Mac(a~b).(\Fun\False.b;\Fun x.x)~a      \\
+  \X{xor} & = \Mac(a~b).(\Fun\False.b;\Fun x.\lan ((\Neg b)~x))~a
+\end{align*}
+
+\begin{math}
+  \ior ((\Neg \True)~(\lan ((\xor (\True~\True))~\True))) \\
+  ~> \ior (\False~(\lan ((\xor (\True~\True))~\True)))    \\
+  ~> \lan ((\xor (\True~\True))~\True)                    \\
+  ~> \lan ((\lan ((\Neg \True)~\True))~\True)             \\
+  ~> \lan ((\lan (\False~\True))~\True)                   \\
+  ~> \lan (\False~\True)                                  \\
+  ~> \False
+\end{math}
+
+\subsubsection{Lists}
+\label{sec:core-example-lists}
+
+\begin{align*}
+  \X{list} & = \Mac (x~<>).\Cons (x~\Nil);\Mac(x~xs).\Cons (x~(\lst xs))
+\end{align*}
+
+\begin{math}
+  \lst (1~(2~(3~<>)))                    \\
+  ~> \Cons (1~(\lst (2~(3~<>))))         \\
+  ~> \Cons (1~(\Cons (2~(\lst (3~<>))))) \\
+  ~> \Cons (1~(\Cons (2~(\Cons (3~\Nil)))))
+\end{math}
+
+\begin{align*}
+  \X{rev} & = \Fun(\Nil~a).a;\Fun((\Cons (y~ys))~a).\rev (ys~(\Cons (y~a))) \\
+  \X{reverse} & = \Fun xs.\rev (xs~\Nil)
+\end{align*}
+
+\begin{math}
+  \reverse (\Cons (1~(\Cons (2~(\Cons (3~\Nil))))))       \\
+  ~> \rev ((\Cons (1~(\Cons (2~(\Cons (3~\Nil))))))~\Nil) \\
+  ~> \rev ((\Cons (2~(\Cons (3~\Nil))))~(\Cons (1~\Nil))) \\
+  ~> \rev ((\Cons (3~\Nil))~(\Cons (2~(\Cons (1~\Nil))))) \\
+  ~> \rev (\Nil~(\Cons (3~(\Cons (2~(\Cons (1~\Nil))))))) \\
+  ~> \Cons (3~(\Cons (2~(\Cons (1~\Nil)))))
+\end{math}
+
+\begin{align*}
+  \X{append} & = \Fun(\Nil~ys).ys;\Fun((\Cons (x~xs))~ys).\Cons (x~(\append (xs~ys)))
+\end{align*}
+
+\begin{math}
+  \append ((\Cons (1~(\Cons (2~\Nil))))~(\Cons (3~(\Cons (4~\Nil)))))    \\
+  ~> \Cons (1~(\append ((\Cons (2~\Nil))~(\Cons (3~(\Cons (4~\Nil))))))) \\
+  ~> \Cons (1~(\Cons (2~(\append (\Nil~(\Cons (3~(\Cons (4~\Nil))))))))) \\
+  ~> \Cons (1~(\Cons (2~(\Cons (3~(\Cons (4~\Nil)))))))
+\end{math}
+
+\begin{align*}
+  \X{map} & = \Fun(\_~\Nil).\Nil;\Fun(f~(\Cons (x~xs))).\Cons ((f~x)~(\map (f~xs)))
+\end{align*}
+
+\begin{math}
+  \map (\Succ (\Cons (3~(\Cons (2~(\Cons (1~\Nil)))))))    \\
+  ~> \Cons (4~(\map (\Succ (\Cons (2~(\Cons (1~\Nil))))))) \\
+  ~> \Cons (4~(\Cons (3~(\map (\Succ (\Cons (1~\Nil))))))) \\
+  ~> \Cons (4~(\Cons (3~(\Cons (2~(\map (\Succ \Nil))))))) \\
+  ~> \Cons (4~(\Cons (3~(\Cons (2~\Nil)))))
+\end{math}
+
+\section{The extended model}
+\label{sec:ext-model}
+
+\subsection{Extended syntax}
+\label{sec:ext-syntax}
+
+\begin{mathpar}
+  t_1~t_2~\cdots~t_n ~> t_1~(t_2~\cdots~t_n)
+
+  n \ge 2
+
+  p_1~p_2~\cdots~p_n ~> p_1~(p_2~\cdots~p_n) \\
+  
+  t_1;t_2;\cdots;t_n ~> t_1;(t_2;\cdots;t_n)
+
+  p_1;p_2;\cdots;p_n ~> p_1;(p_2;\cdots;p_n) \\
+
+  \Mac \begin{Clauses}
+    p_1 & t_1 \\
+    p_2 & t_2 \\
+    \vdots & \vdots \\
+    p_n & t_n
+  \end{Clauses}
+  ~>
+  \Mac p_1.t_1;\Mac \begin{Clauses}
+    p_2 & t_2 \\
+    \vdots & \vdots \\
+    p_n & t_n
+  \end{Clauses}
+
+  \Mac \begin{Clauses} p_1 & t_1 \end{Clauses} ~> \Mac p_1.t_1
+
+  \Fun \begin{Clauses}
+    p_1 & t_1 \\
+    p_2 & t_2 \\
+    \vdots & \vdots \\
+    p_n & t_n
+  \end{Clauses}
+  ~>
+  \Fun p_1.t_1;\Fun \begin{Clauses}
+    p_2 & t_2 \\
+    \vdots & \vdots \\
+    p_n & t_n
+  \end{Clauses}
+
+  \Fun \begin{Clauses} p_1 & t_1 \end{Clauses} ~> \Fun p_1.t_1
+\end{mathpar}
+
+\subsection{Let bindings}
+\label{sec:ext-let-bindings}
+
+\begin{mathpar}
+  \X{fix} = \Fun f.(\Fun x.f~\Fun y.(x~x)~y)~(\Fun x.f~\Fun y.(x~x)~y)
+
+  \X{let} \approx \Mac \begin{Clauses}[cc|c]
+    (p~t)  & body & (\Fun p.body)~t \\
+    (p~t;cs) & body & \Let (p~t)~\Let cs~body
+  \end{Clauses}
+
+  \X{letrec} \approx \Mac \begin{Clauses}[cc|c]
+    (p~t)    & body & \Let (p~\fix \Fun p.body)~t \\
+    (p~t;cs) & body & \Letrec (p~t)~\Letrec cs~body
+  \end{Clauses}
+\end{mathpar}
+
+\subsection{Examples}
+\label{sec:ext-examples}
+
+\subsubsection{Numbers}
+\label{sec:ext-example-numbers}
+
+\begin{mathpar}
+  \X{add} = \Fun \begin{Clauses}[cc|c]
+    a & \Zero   & a \\
+    a & \Succ b & \Succ \add a~b
+  \end{Clauses}
+
+  \X{mul} = \Fun \begin{Clauses}[cc|c]
+    a & \Zero   & \Zero \\
+    a & \Succ b & \add a~\mul a~b
+  \end{Clauses}
+\end{mathpar}
+
+\begin{math}
+  \add (\Succ \Zero)~\Succ \Succ \Zero    \\
+  ~> \Succ \add (\Succ \Zero)~\Succ \Zero \\
+  ~> \Succ \Succ \add (\Succ \Zero)~\Zero \\
+  ~> \Succ \Succ \Succ \Zero
+\end{math}
+
+\begin{minipage}[t]{0.45\linewidth}
+  \begin{math}
+    \mul 2~3                         \\
+    ~> \add 2~\mul 2~2               \\
+    ~> \add 2~\add 2~\mul 2~1        \\
+    ~> \add 2~\add 2~\add 2~\mul 2~0 \\
+    ~> \add 2~\add 2~\add 2~0        \\
+    ~> \add 2~\add 2~2               \\
+    ~> \add 2~\Succ \add 2~1         \\
+    ~> \add 2~\Succ \Succ \add 2~0
+  \end{math}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.45\linewidth}
+  \begin{math}
+    \\
+    ~> \add 2~4                         \\
+    ~> \Succ \add 2~3                   \\
+    ~> \Succ \Succ \add 2~2             \\
+    ~> \Succ \Succ \Succ \add 2~1       \\
+    ~> \Succ \Succ \Succ \Succ \add 2~0 \\
+    ~> 6
+  \end{math}
+\end{minipage}
+
+\subsubsection{Booleans}
+\label{sec:ext-example-booleans}
+
+\begin{mathpar}
+  \X{not} = \Fun \begin{Clauses}
+    \False & \True \\
+    \_     & \False
+  \end{Clauses}
+  
+  \X{and} = \Mac(a~b).\Fun \begin{Clauses}
+    \False & \False \\
+    \_     & b
+  \end{Clauses}~a \\
+
+  \X{or} = \Mac(a~b).\Fun \begin{Clauses}
+    \False & b \\
+    x      & x
+  \end{Clauses}~a
+
+  \X{xor} = \Mac(a~b).\Fun \begin{Clauses}
+    \False & b \\
+    x      & \lan (\Neg b)~x
+  \end{Clauses}~a
+\end{mathpar}
+
+\begin{math}
+  \ior (\Neg \True)~\lan (\xor \True~\True)~\True \\
+  ~> \ior \False~\lan (\xor \True~\True)~\True    \\
+  ~> \lan (\xor \True~\True)~\True                  \\
+  ~> \lan (\lan (\Neg \True)~\True)~\True           \\
+  ~> \lan (\lan \False~\True)~\True                 \\
+  ~> \lan \False~\True                              \\
+  ~> \False
+\end{math}
+
+\subsubsection{Lists}
+\label{sec:ext-example-lists}
+
+\begin{mathpar}
+  \X{list} = \Mac \begin{Clauses}[cc|c]
+    x & <> & \Cons (x;\Nil) \\
+    x & xs & \Cons (x;\lst xs)
+  \end{Clauses}
+\end{mathpar}
+
+\begin{math}
+  \lst 1~2~3~<>                   \\
+  ~> \Cons (1;\lst 2~3~<>)        \\
+  ~> \Cons (1;\Cons (2;\lst 3))<> \\
+  ~> \Cons (1;\Cons (2;\Cons (3;\Nil)))
+\end{math}
+
+\begin{mathpar}
+  \X{reverse} = \Fun xs.\Letrec \mleft(rev~\Fun \begin{Clauses}[cc|c]
+    \Nil           & a & a \\
+    (\Cons (y;ys)) & a & rev~ys~\Cons (y;a)
+  \end{Clauses}\mright)~rev~xs~\Nil
+\end{mathpar}
+
+\begin{math}
+  \reverse \Cons (1;\Cons (2;\Cons (3;\Nil)))      \\
+  ~> rev~(\Cons (1;\Cons (2;\Cons 3~\Nil)))~\Nil   \\
+  ~> rev~(\Cons (2;\Cons (3;\Nil)))~\Cons (1;\Nil) \\
+  ~> rev~(\Cons (3;\Nil))~\Cons (2;\Cons (1;\Nil)) \\
+  ~> rev~\Nil~\Cons (3;\Cons (2;\Cons (1;\Nil)))   \\
+  ~> \Cons (3;\Cons (2;\Cons (1;\Nil)))
+\end{math}
+
+\begin{mathpar}
+  \X{append} = \Fun \begin{Clauses}[cc|c]
+    \Nil           & ys & ys \\
+    (\Cons (x;xs)) & ys & \Cons (x;\append xs~ys)
+  \end{Clauses}
+\end{mathpar}
+
+\begin{math}
+  \append (\Cons (1;\Cons (2;\Nil)))~\Cons (3;\Cons (4;\Nil))    \\
+  ~> \Cons (1;\append (\Cons (2;\Nil))~\Cons (3;\Cons (4;\Nil))) \\
+  ~> \Cons (1;\Cons (2;\append \Nil~\Cons (3;\Cons (4;\Nil))))   \\
+  ~> \Cons (1;\Cons (2;\Cons (3;\Cons (4;\Nil))))
+\end{math}
+
+\begin{mathpar}
+  \X{map} = \Fun \begin{Clauses}[cc|c]
+    \_ & \Nil         & \Nil \\
+    f  & \Cons (x;xs) & \Cons (f~x;\map f~xs)
+  \end{Clauses}
+\end{mathpar}
+
+\begin{math}
+  \map \Succ \Cons (3;\Cons (2;\Cons (1;\Nil)))    \\
+  ~> \Cons (4;\map \Succ \Cons (2;\Cons (1;\Nil))) \\
+  ~> \Cons (4;\Cons (3;\map \Succ \Cons (1;\Nil))) \\
+  ~> \Cons (4;\Cons (3;\Cons (2;\map \Succ \Nil))) \\
+  ~> \Cons (4;\Cons (3;\Cons (2;\Nil)))
+\end{math}
+
+\section{Host integration}
+\label{sec:host-integration}
+
+\subsection{Primitive data}
+\label{sec:host-literals}
+
+\begin{mathpar}
+  t ::= \ldots \OR \ell
+
+  p ::= \ldots \OR \ell
+
+  v ::= \ldots \OR \ell
+
+  \ell ::= <> \\
+
+  \Infer{
+    \ell_1 = \ell_2
+  }{
+    \ell_1 ** \ell_2 = \{\}
+  }
+\end{mathpar}
+
+\subsubsection{Procedures}
+\label{sec:host-procedures}
+
+\begin{mathpar}
+  t ::= \ldots \OR f
+
+  p ::= \ldots \OR f
+
+  v ::= \ldots \OR f~\ell
+
+  f ::= \ldots \\
+
+  \Infer[Pro]{
+    \hcall(f_1,\ell_{21},\ell_{22},\ldots,\ell_{2n}) = \ell_1',\ell_2',\ldots,\ell_m' \\
+    n,m \ge 1
+  }{
+    f_1~\ell_{21}~\ell_{22}~\cdots~\ell_{2n} ~> \ell_1'~\ell_2'~\cdots~\ell_m'
+  }
+\end{mathpar}
+
+\subsubsection{Numbers}
+\label{sec:host-numbers}
+
+\begin{mathpar}
+  \ell ::= \ldots \OR n
+
+  f ::= \ldots \OR =: \OR >: \OR <: \OR +: \OR -: \OR *: \OR /:
+\end{mathpar}
+
+\begin{mathpar}
+  \X{fib} = \Fun \begin{Clauses}
+    n \If <:~n~2 & 1                            \\
+    n            & +:~(\Fib -:~n~1)~\Fib -:~n~2 \\
+  \end{Clauses}
+\end{mathpar}
+
+\begin{math}
+  \Fib 3 \\
+  ~> +:~(\Fib -:~3~1)~\Fib -:~3~2 \\
+  ~> +:~(\Fib 2)~\Fib -:~3~2 \\
+  ~> +:~(+:~(\Fib -:~2~1)~\Fib -:~2~2)~\Fib -:~3~2 \\
+  ~> +:~(+:~(\Fib 1)~\Fib -:~2~2)~\Fib -:~3~2 \\
+  ~> +:~(+:~1~\Fib -:2~2)~\Fib -:~3~2 \\
+  ~> +:~(+:~1~\Fib 0)~\Fib -:~3~2 \\
+  ~> +:~(+:~1~1)~\Fib -:~3~2 \\
+  ~> +:~2~\Fib -:~3~2 \\
+  ~> +:~2~\Fib 1 \\
+  ~> +:~2~1 \\
+  ~> 3
+\end{math}
+
+% \subsubsection{Characters}
+% \label{sec:host-characters}
+
+% \begin{mathpar}
+%   \ell ::= \ldots \OR c
+% \end{mathpar}
+
+% \subsubsection{Regular expressions}
+% \label{sec:regular-expressions}
+
+% \begin{mathpar}
+%   \ell ::= \ldots \OR q
+
+%   \Infer{
+%     \match_\X{rx}(q_1,t_2) = \sigma
+%   }{
+%     q_1 ** t_2 = \sigma
+%   }
+% \end{mathpar}
+
+\subsubsection{Booleans}
+\label{sec:host-booleans}
+
+\begin{mathpar}
+  \ell ::= \ldots \OR \top \OR \bot
+\end{mathpar}
+
+% (letrec ([xor μ (a b) (fun [#f b] [x and (not b) x]) a])
+%   or (not #t) and (xor #t #t) #t)
+
+  % \X{not} = \Fun \begin{Clauses}
+  %   \False & \True \\
+  %   \_     & \False
+  % \end{Clauses}
+  
+  % \X{and} = \Mac(a~b).\Fun \begin{Clauses}
+  %   \False & \False \\
+  %   \_     & b
+  % \end{Clauses}~a \\
+
+  % \X{or} = \Mac(a~b).\Fun \begin{Clauses}
+  %   \False & b \\
+  %   x      & x
+  % \end{Clauses}~a
+
+  % \X{xor} = \Mac(a~b).\Fun \begin{Clauses}
+  %   \False & b \\
+  %   x      & \lan (\Neg b)~x
+  % \end{Clauses}~a
+
+\begin{mathpar}
+  \X{not} = \Fun \begin{Clauses}
+    \bot & \top \\
+    \_   & \bot
+  \end{Clauses}
+
+  \X{and} = \Mac(a~b).\Fun \begin{Clauses}
+    \bot & \bot \\
+    \_   & b
+  \end{Clauses}~a
+
+  \X{or} = \Mac(a~b).\Fun \begin{Clauses}
+    \bot & b \\
+    x    & x
+  \end{Clauses}~a
+
+  \X{xor} = \Mac(a~b).\Fun \begin{Clauses}
+    \bot & b \\
+    x    & \lan (\Neg b)~x
+  \end{Clauses}~a
+\end{mathpar}
+
+\begin{math}
+  \ior (\Neg \top)~\lan (\xor \top~\top)~\top \\
+  ~> \ior \bot~\lan (\xor \top~\top)~\top \\
+  ~> \lan (\xor \top~\top)~\top \\
+  ~> \lan (\lan (\Neg \top)~\top)~\top \\
+  ~> \lan (\lan \bot~\top)~\top \\
+  ~> \lan \bot~\top \\
+  ~> \bot
+\end{math}
+
+\subsubsection{Lists}
+\label{sec:host-lists}
+
+\begin{mathpar}
+  \ell ::= \ldots \OR \ell~\ell
+\end{mathpar}
+
+% \subsubsection{Strings}
+% \label{sec:host-strings}
+
+% \begin{mathpar}
+%   \ell ::= \ldots \OR s
+
+%   f ::= \ldots \OR == \OR ++ \OR //
+% \end{mathpar}
+
+% \subsection{Lists}
+% \label{sec:host-lists}
+
+% \begin{mathpar}
+%   t ::= \ldots \OR t :: t
+
+%   p ::= \ldots \OR p :: p
+
+%   \ell ::= \ldots \OR \ell :: \ell \\
+
+%   \Infer{
+%     t_1 ~> t_1'
+%   }{
+%     t_1 :: t_2 ~> t_1' :: t_2
+%   }
+
+%   \Infer{
+%     t_2 ~> t_2'
+%   }{
+%     v_1 :: t_2 ~> v_1 :: t_2'
+%   } \\
+
+%   \Infer{
+%     p_1 ** t_1 = \sigma_1 \\
+%     p_2 ** t_2 = \sigma_2
+%   }{
+%     (p_1 :: p_2) ** (t_1 :: t_2) = \sigma_1 \cup \sigma_2
+%   }
+% \end{mathpar}
+
+% \begin{mathpar}
+%   \X{lis} = \Mac
+%   \begin{Clauses}[l|c]
+%     t_1~<>  & t_1::<> \\
+%     t_1~t_2 & t_1::\X{lis}~t_2
+%   \end{Clauses}
+
+%   \X{list} = \Fun
+%   \begin{Clauses}[l|c]
+%     v_1~<>  & v_1::<> \\
+%     v_1~v_2 & v_1::\X{list}~v_2
+%   \end{Clauses} \\
+
+%   \X{ap} = \Mac \begin{Clauses}[l|c]
+%     t_1::<>  & t_1 \\
+%     t_1::t_2 & t_1~\X{ap}~t_2
+%   \end{Clauses}
+
+%   \X{app} = \Fun \begin{Clauses}[l|c]
+%     v_1::<>  & v_1 \\
+%     v_1::v_2 & v_1~\X{app}~v_2
+%   \end{Clauses}
+% \end{mathpar}
+
+% \subsection{Arrays}
+% \label{sec:host-arrays}
+
+% \begin{mathpar}
+%   t ::= \ldots \OR <t;\cdot>
+
+%   p ::= \ldots \OR <p;\cdot>
+
+%   v ::= \ldots \OR <v;\cdot>
+
+%   \ell ::= \ldots \OR <\ell;\cdot> \\
+
+%   \Infer[Vec]{
+%     t_1 ~> t_1'
+%   }{
+%     <t_1> ~> <t_1'>
+%   }
+
+%   \Infer[VRef]{
+%     0 \le n_2 \le p
+%   }{
+%     <v_0;v_1;\cdots;v_p>~n_2 ~> v_{n_2}
+%   } \\
+
+%   \Infer{
+%     p_1 ** t_1 = \sigma_1 \\
+%     <p_2> ** <t_2> = \sigma_2
+%   }{
+%     <p_1;p_2> ** <t_1;t_2> = \sigma_1 \cup \sigma_2
+%   }
+
+%   \Infer{
+%     p_1 ** t_1 = \sigma
+%   }{
+%     <p_1> ** <t_1> = \sigma
+%   }
+% \end{mathpar}
+
+% \subsection{Dictionaries}
+% \label{sec:host-dictionaries}
+
+% \begin{mathpar}
+%   t ::= \ldots \OR x +-> t \OR [t]
+  
+%   p ::= \ldots \OR x +-> p \OR [p]
+  
+%   \ell ::= \ldots \OR [x +-> \ell;\cdot] \\
+
+%   \Infer{
+%     t_2 ~> t_2'
+%   }{
+%     x_1 +-> t_2 ~> x_1 +-> t_2'
+%   }
+
+%   \Infer{
+%     t_1 ~> t_1'
+%   }{
+%     [t_1] ~> [t_1']
+%   } \\
+
+%   \Infer{
+%     p_{12} ** t_{22} = \sigma
+%   }{
+%     (x_{11} +-> p_{12}) ** (x_{21} +-> t_{22}) = \{x_{11} +-> x_{21}\} \cup \sigma
+%   }
+
+%   \Infer{
+%     p_1 ** t_1 = \sigma_1 \\
+%     [p_2] ** [t_2] = \sigma_2
+%   }{
+%     [p_1;p_2] ** [t_1;t_2] = \sigma_1 \cup \sigma_2
+%   }
+
+%   \Infer{
+%     p_1 ** t_1 = \sigma
+%   }{
+%     [p_1] ** [t_1] = \sigma
+%   }
+% \end{mathpar}
+
+\subsection{Pattern Guards}
+\label{sec:host-pattern-guards}
+
+\begin{mathpar}
+  p ::= \ldots \OR p \If t \\
+
+  \Infer{
+    p_1 ** t_3 = \sigma_1 \\
+    \sigma_1(t_2) >> v_2 \ne \bot
+  }{
+    (p_1 \If t_2) ** t_3 = \sigma_1
+  }
+\end{mathpar}
+
+% ------------------------------------------------------------------------------
+
+% \bibliographystyle{alpha}
+\bibliography{references.bib} 
+
+\end{document}
